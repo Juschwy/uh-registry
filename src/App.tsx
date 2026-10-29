@@ -103,7 +103,6 @@ function App() {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [cacheMessage, setCacheMessage] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortMode, setSortMode] = useState<EventSortMode>('next-upcoming')
   const [fromDate, setFromDate] = useState('')
@@ -123,7 +122,6 @@ function App() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           hasCachedData = true
           setEvents(parsed)
-          setCacheMessage('Zwischengespeicherte Veranstaltungen werden angezeigt.')
         }
       } catch {
         // Ignore invalid cache content.
@@ -139,7 +137,6 @@ function App() {
       const csvText = await response.text()
       const parsedEvents = parseCsvEvents(csvText)
       setEvents(parsedEvents)
-      setCacheMessage(null)
       setError(null)
 
       if (parsedEvents.length > 0) {
