@@ -447,6 +447,9 @@ function App() {
           {selectedEvent && (
             <>
               <DialogHeader className="space-y-3 pb-1">
+                <DialogDescription className="text-left text-base text-muted-foreground">
+                  {selectedEvent.organizer}
+                </DialogDescription>
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <DialogTitle className="text-[2rem] font-semibold leading-none tracking-[-0.04em] text-foreground">
@@ -457,9 +460,6 @@ function App() {
                     <Badge variant="outline">Vergangen</Badge>
                   )}
                 </div>
-                <DialogDescription className="text-left text-base text-muted-foreground">
-                  {selectedEvent.organizer}
-                </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4 pb-2">
