@@ -1,27 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, MapPin, Search, SlidersHorizontal } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { CalendarDays, LoaderCircle, Search, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { APP_NAME, CSV_URL, FORM_URL } from './config'
+import { cn } from '@/lib/utils'
+import { APP_LOGO_URL, APP_NAME, CSV_URL, FORM_URL } from './config'
+import { EventCard } from './components/EventCard'
+import { EventDetailDialog } from './components/EventDetailDialog'
 import {
   type Event,
   type EventSortMode,
@@ -34,11 +24,19 @@ import {
 const CACHE_KEY = 'uh-register-cache-v1'
 
 const SORT_OPTIONS: Array<{ value: EventSortMode; label: string }> = [
-  { value: 'next-upcoming', label: 'Nachster Termin' },
-  { value: 'latest-upcoming', label: 'Spatester Termin' },
+  { value: 'next-upcoming', label: 'Nächster Termin' },
+  { value: 'latest-upcoming', label: 'Spätester Termin' },
   { value: 'organizer', label: 'Organisator A-Z' },
   { value: 'title', label: 'Titel A-Z' },
 ]
+
+const getTodayIso = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 const normalizeSearchTerm = (value: string): string =>
   value
@@ -58,19 +56,6 @@ const formatDateOnly = (value: string): string => {
   }).format(date)
 }
 
-const formatCardDate = (dates: Event['dates']): string => {
-  if (!dates.length) return 'Ohne Termin'
-
-  const sortedDates = [...dates].sort(
-    (a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime),
-  )
-  const first = sortedDates[0]
-  const last = sortedDates[sortedDates.length - 1]
-
-  if (sortedDates.length === 1) return formatDateOnly(first.date)
-  return `${formatDateOnly(first.date)} – ${formatDateOnly(last.date)}`
-}
-
 const toIsoDate = (value: Date): string => {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -79,37 +64,16 @@ const toIsoDate = (value: Date): string => {
   return `${year}-${month}-${day}`
 }
 
-const toComparableDateTime = (value: string, time: string): number => {
-  const [year, month, day] = value.split('-').map(Number)
-  const [hours, minutes] = time.split(':').map(Number)
-
-  return year * 100000000 + month * 1000000 + day * 10000 + hours * 100 + minutes
-}
-
-const formatDetailDate = (value: string, time: string): string => {
-  const [year, month, day] = value.split('-').map(Number)
-  const eventDate = new Date(year, month - 1, day)
-  const dateText = new Intl.DateTimeFormat('de-CH', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(eventDate)
-
-  return `${dateText} · ${time} Uhr`
-}
-
 function App() {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortMode, setSortMode] = useState<EventSortMode>('next-upcoming')
-  const [fromDate, setFromDate] = useState('')
+  const [fromDate, setFromDate] = useState<string>(getTodayIso())
   const [toDate, setToDate] = useState('')
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [legalDialog, setLegalDialog] = useState<'privacy' | 'imprint' | null>(null)
-  /* oxlint-disable-next-line react/purity */
   const now = useMemo(() => new Date(), [])
 
   const loadEvents = useCallback(async () => {
@@ -153,13 +117,8 @@ function App() {
     }
   }, [])
 
-  // eslint-disable-next-line react/set-state-in-effect
   useEffect(() => {
-    const runLoad = async () => {
-      await loadEvents()
-    }
-
-    void runLoad()
+    void loadEvents()
   }, [loadEvents])
 
   const filteredEvents = useMemo(() => {
@@ -184,28 +143,14 @@ function App() {
     [events, selectedEventId],
   )
 
-  const selectedEventMapsUrl = selectedEvent?.town
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedEvent.town)}`
-    : null
-
-  const hasActiveFilters = Boolean(searchTerm || fromDate || toDate || sortMode !== 'next-upcoming')
-  const currentSortLabel = SORT_OPTIONS.find((option) => option.value === sortMode)?.label ?? 'Nachster Termin'
-  const nowComparable = toComparableDateTime(toIsoDate(now), now.toTimeString().slice(0, 5))
-
-  const eventStatusMap = useMemo(
-    () =>
-      new Map(
-        events.map((event) => [
-          event.id,
-          event.dates.some((date) => toComparableDateTime(date.date, date.startTime) < nowComparable),
-        ]),
-      ),
-    [events, nowComparable],
+  const hasActiveFilters = Boolean(
+    searchTerm || toDate || fromDate !== getTodayIso() || sortMode !== 'next-upcoming',
   )
+  const currentSortLabel = SORT_OPTIONS.find((option) => option.value === sortMode)?.label ?? 'Nächster Termin'
 
   const resetFilters = () => {
     setSearchTerm('')
-    setFromDate('')
+    setFromDate(getTodayIso())
     setToDate('')
     setSortMode('next-upcoming')
   }
@@ -215,7 +160,10 @@ function App() {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-3 sm:p-6">
         <header className="border bg-card p-3 shadow-sm sm:p-4">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{APP_NAME}</h1>
+            <div className="flex min-w-0 items-center gap-3">
+              <img src={APP_LOGO_URL} alt={`${APP_NAME} Logo`} className="h-9 w-9 rounded-md object-cover" />
+              <h1 className="truncate text-lg font-semibold tracking-tight sm:text-2xl">{APP_NAME}</h1>
+            </div>
 
             <a
               href={FORM_URL}
@@ -230,14 +178,6 @@ function App() {
 
         <section className="border bg-card p-3 shadow-sm sm:p-4" aria-label="Suche und Filter">
           <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              {events.length > 0 && !loading && (
-                <Badge variant="secondary" className="shrink-0">
-                  {filteredEvents.length} Treffer
-                </Badge>
-              )}
-            </div>
-
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -297,10 +237,10 @@ function App() {
                 </Popover>
               </div>
 
-              <div className="space-y-1.5">
+              <div>
                 <label className="text-xs font-medium text-muted-foreground">Sortieren</label>
                 <Select value={sortMode} onValueChange={(value) => setSortMode(value as EventSortMode)}>
-                  <SelectTrigger className="h-11 w-full border-input bg-background text-sm shadow-none">
+                  <SelectTrigger className="h-11 w-full border-input bg-background p-3 text-sm shadow-none">
                     <span aria-live="polite">{currentSortLabel}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -325,15 +265,21 @@ function App() {
 
         {loading && (
           <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              Veranstaltungen werden geladen…
+            <CardContent className="flex flex-col items-center justify-center gap-3 py-10 text-center text-sm text-muted-foreground">
+              <LoaderCircle className="h-6 w-6 animate-spin text-primary" />
+              <span>Veranstaltungen werden geladen…</span>
             </CardContent>
           </Card>
         )}
 
-        {!loading && error && events.length === 0 && (
+        {!loading && error && (
           <Card className="border-destructive/40 bg-destructive/5">
-            <CardContent className="py-10 text-center text-sm text-destructive">{error}</CardContent>
+            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+              <p className="text-sm text-destructive">{error}</p>
+              <Button type="button" onClick={() => void loadEvents()}>
+                Erneut versuchen
+              </Button>
+            </CardContent>
           </Card>
         )}
 
@@ -345,60 +291,22 @@ function App() {
           </Card>
         )}
 
-        {!loading && filteredEvents.length > 0 && (
+        {!loading && !error && filteredEvents.length > 0 && (
           <section className="space-y-3" aria-live="polite">
             <div className="flex items-center justify-between px-1">
               <p className="text-sm text-muted-foreground">Nächste Termine</p>
-              <p className="text-xs text-muted-foreground">{filteredEvents.length} gesamt</p>
+              <p className="text-xs text-muted-foreground">{filteredEvents.length} Treffer</p>
             </div>
 
             <div className="space-y-3">
-              {filteredEvents.map((event) => {
-                const isPast = eventStatusMap.get(event.id) ?? false
-
-                return (
-                  <Card
-                    key={event.id}
-                    className="cursor-pointer border-border/80 bg-card transition-colors hover:border-primary/80 hover:bg-accent/20"
-                    onClick={() => setSelectedEventId(event.id)}
-                    onKeyDown={(keyboardEvent) => {
-                      if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
-                        keyboardEvent.preventDefault()
-                        setSelectedEventId(event.id)
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <CardHeader className="space-y-3 pb-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <Badge variant="secondary" className="max-w-[70%] truncate">
-                          {event.organizer}
-                        </Badge>
-                        {isPast && <Badge variant="outline">Vergangen</Badge>}
-                      </div>
-                      <CardTitle className="text-xl leading-tight text-foreground">{event.title}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2.5 pb-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <CalendarDays className="h-4 w-4 shrink-0" />
-                        <span>{formatCardDate(event.dates)}</span>
-                      </div>
-                      {event.town && (
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 shrink-0" />
-                          <span>{event.town}</span>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
+              {filteredEvents.map((event) => (
+                <EventCard key={event.id} event={event} now={now} onSelect={setSelectedEventId} />
+              ))}
             </div>
           </section>
         )}
 
-        {!loading && filteredEvents.length === 0 && events.length > 0 && (
+        {!loading && !error && filteredEvents.length === 0 && events.length > 0 && (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               Keine passenden Veranstaltungen gefunden.
@@ -407,7 +315,12 @@ function App() {
         )}
 
         <footer className="flex flex-wrap items-center justify-center gap-4 border bg-card p-3 text-sm text-muted-foreground shadow-sm">
-          <p>UH-Register</p>
+          <button type="button" onClick={() => setLegalDialog('privacy')} className="transition-colors hover:text-foreground">
+            Datenschutz
+          </button>
+          <button type="button" onClick={() => setLegalDialog('imprint')} className="transition-colors hover:text-foreground">
+            Impressum
+          </button>
         </footer>
       </div>
 
@@ -442,69 +355,7 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(selectedEvent)} onOpenChange={(open) => !open && setSelectedEventId(null)}>
-        <DialogContent className="sm:max-w-[560px] border bg-card p-6 shadow-sm">
-          {selectedEvent && (
-            <>
-              <DialogHeader className="space-y-3 pb-1">
-                <DialogDescription className="text-left text-base text-muted-foreground">
-                  {selectedEvent.organizer}
-                </DialogDescription>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <DialogTitle className="text-[2rem] font-semibold leading-none tracking-[-0.04em] text-foreground">
-                      {selectedEvent.title}
-                    </DialogTitle>
-                  </div>
-                  {selectedEvent.dates.some((date) => new Date(`${date.date}T${date.startTime}:00`).getTime() < now.getTime()) && (
-                    <Badge variant="outline">Vergangen</Badge>
-                  )}
-                </div>
-              </DialogHeader>
-
-              <div className="space-y-4 pb-2">
-                <ul className="space-y-2">
-                  {selectedEvent.dates.map((date) => {
-                    const isPast = new Date(`${date.date}T${date.startTime}:00`).getTime() < now.getTime()
-                    return (
-                      <li
-                        key={`${selectedEvent.id}-${date.date}-${date.startTime}`}
-                        className="flex items-center justify-between gap-2 border bg-muted/30 px-3 py-2.5 text-sm text-foreground"
-                      >
-                        <span>{formatDetailDate(date.date, date.startTime)}</span>
-                        {isPast && <Badge variant="outline">Vergangen</Badge>}
-                      </li>
-                    )
-                  })}
-                </ul>
-
-                {selectedEvent.town && selectedEventMapsUrl && (
-                  <a
-                    href={selectedEventMapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex w-full items-center justify-center gap-2 border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-                  >
-                    <MapPin className="h-4 w-4" />
-                    <span>{selectedEvent.town}</span>
-                  </a>
-                )}
-
-                {selectedEvent.link && (
-                  <a
-                    href={selectedEvent.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonVariants({ size: 'default' }) + ' inline-flex w-full justify-center'}
-                  >
-                    Weitere Informationen
-                  </a>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <EventDetailDialog selectedEvent={selectedEvent} now={now} onClose={() => setSelectedEventId(null)} />
     </div>
   )
 }

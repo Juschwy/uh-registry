@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   filterEventsByDateRange,
   getNextFutureDate,
+  getUpcomingCount,
   getVisibleEvents,
   parseCsvEvents,
   sortEvents,
@@ -9,8 +10,8 @@ import {
 
 describe('parseCsvEvents', () => {
   it('parses a normalized CSV with multiple dates and quoted fields', () => {
-    const csv = `organizer,title,town,link,eventDatetime1,eventDatetime2,eventDatetime3
-"TV Berlingen","Blind Donkey","Berlingen","https://www.tvberlingen.ch/","2026-11-20T20:00:00","2026-11-21T20:00:00","2026-11-22T20:00:00"`
+    const csv = `organizer,title,town,websiteUrl,imageUrl,eventDatetime1,eventDatetime2,eventDatetime3
+"TV Berlingen","Blind Donkey","Berlingen","https://www.tvberlingen.ch/","/images/berlingen.jpg","2026-11-20T20:00:00","2026-11-21T20:00:00","2026-11-22T20:00:00"`
 
     const events = parseCsvEvents(csv)
 
@@ -19,7 +20,8 @@ describe('parseCsvEvents', () => {
       organizer: 'TV Berlingen',
       title: 'Blind Donkey',
       town: 'Berlingen',
-      link: 'https://www.tvberlingen.ch/',
+      websiteUrl: 'https://www.tvberlingen.ch/',
+      imageUrl: '/images/berlingen.jpg',
     })
     expect(events[0].dates).toEqual([
       { date: '2026-11-20', startTime: '20:00' },
@@ -29,7 +31,7 @@ describe('parseCsvEvents', () => {
   })
 
   it('skips invalid records and keeps valid dates from the same row', () => {
-    const csv = `organizer,title,town,link,eventDatetime1,eventDatetime2,eventDatetime3
+    const csv = `organizer,title,town,websiteUrl,eventDatetime1,eventDatetime2,eventDatetime3
 "","Valid title","Zurich","https://example.com","2027-01-01T19:00:00","2027-01-02T19:00:00",""
 "TV Uster","Test Event","Uster","","bad-date","2027-02-03T18:30:00",""`
 
@@ -49,7 +51,8 @@ describe('getVisibleEvents', () => {
         organizer: 'TV Berlingen',
         title: 'Blind Donkey',
         town: 'Berlingen',
-        link: null,
+        websiteUrl: null,
+        imageUrl: null,
         dates: [
           { date: '2020-11-20', startTime: '20:00' },
           { date: '2026-11-20', startTime: '20:00' },
@@ -60,7 +63,8 @@ describe('getVisibleEvents', () => {
         organizer: 'TV Zürich',
         title: 'Fasnachtsnacht',
         town: 'Zürich',
-        link: null,
+        websiteUrl: null,
+        imageUrl: null,
         dates: [{ date: '2027-02-01', startTime: '18:00' }],
       },
       {
@@ -68,7 +72,8 @@ describe('getVisibleEvents', () => {
         organizer: 'TV Winterthur',
         title: 'Past Event',
         town: null,
-        link: null,
+        websiteUrl: null,
+        imageUrl: null,
         dates: [{ date: '2022-01-10', startTime: '19:00' }],
       },
     ]
@@ -92,7 +97,8 @@ describe('sorting and date helpers', () => {
         organizer: 'TV Nord',
         title: 'Event B',
         town: null,
-        link: null,
+        websiteUrl: null,
+        imageUrl: null,
         dates: [{ date: '2027-02-10', startTime: '18:00' }],
       },
       {
@@ -100,7 +106,8 @@ describe('sorting and date helpers', () => {
         organizer: 'TV Nord',
         title: 'Event A',
         town: null,
-        link: null,
+        websiteUrl: null,
+        imageUrl: null,
         dates: [{ date: '2027-01-10', startTime: '18:00' }],
       },
     ]
@@ -120,5 +127,18 @@ describe('sorting and date helpers', () => {
     )
 
     expect(date).toEqual({ date: '2026-11-20', startTime: '20:00' })
+  })
+
+  it('counts only upcoming dates', () => {
+    const count = getUpcomingCount(
+      [
+        { date: '2024-01-01', startTime: '18:00' },
+        { date: '2026-11-20', startTime: '20:00' },
+        { date: '2026-11-21', startTime: '20:00' },
+      ],
+      new Date('2026-11-19T12:00:00+01:00'),
+    )
+
+    expect(count).toBe(2)
   })
 })

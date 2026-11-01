@@ -1,4 +1,7 @@
-export const APP_NAME = import.meta.env.VITE_APP_NAME ?? '🤸‍♂️ UH-Register'
+export const APP_NAME = import.meta.env.VITE_APP_NAME ?? 'UH-Register'
+export const APP_LOGO_URL = import.meta.env.VITE_APP_LOGO_URL ?? '/logo.png'
+export const APP_DESCRIPTION =
+  import.meta.env.VITE_APP_DESCRIPTION ?? 'Veranstaltungen von Schweizer Turnvereinen mit Suche, Filtern und Detailansicht.'
 export const CSV_URL =
   import.meta.env.VITE_CSV_URL ??
   'https://docs.google.com/spreadsheets/d/1ybv9lAwSZEBGDTzgsaPMSSzZdxRVrnF6adqbmZWjRZE/export?format=csv'

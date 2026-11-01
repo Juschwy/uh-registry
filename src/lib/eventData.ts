@@ -10,7 +10,8 @@ export type Event = {
   organizer: string
   title: string
   town: string | null
-  link: string | null
+  websiteUrl: string | null
+  imageUrl: string | null
   dates: EventDate[]
 }
 
@@ -21,7 +22,7 @@ export type DateRange = {
 
 export type EventSortMode = 'next-upcoming' | 'latest-upcoming' | 'organizer' | 'title'
 
-const sanitizeLink = (value: string | null | undefined): string | null => {
+const sanitizeUrl = (value: string | null | undefined): string | null => {
   const trimmed = (value ?? '').trim()
   if (!trimmed) return null
 
@@ -34,12 +35,34 @@ const sanitizeLink = (value: string | null | undefined): string | null => {
   }
 }
 
+const sanitizeImageUrl = (value: string | null | undefined): string | null => {
+  const trimmed = (value ?? '').trim()
+  if (!trimmed) return null
+
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')) {
+    return trimmed
+  }
+
+  return null
+}
+
 const isValidDateString = (value: string | null | undefined): value is string => {
   if (!value || typeof value !== 'string') return false
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value.trim())) return false
 
-  const date = new Date(`${value}Z`)
-  return !Number.isNaN(date.getTime())
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(value.trim())
+  if (!match) return false
+
+  const [, year, month, day, hours, minutes, seconds] = match
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds))
+
+  return (
+    parsed.getFullYear() === Number(year) &&
+    parsed.getMonth() === Number(month) - 1 &&
+    parsed.getDate() === Number(day) &&
+    parsed.getHours() === Number(hours) &&
+    parsed.getMinutes() === Number(minutes) &&
+    parsed.getSeconds() === Number(seconds)
+  )
 }
 
 const parseEventDate = (value: string | null | undefined): EventDate | null => {
@@ -67,19 +90,21 @@ const sortDatesAscending = (dates: EventDate[]): EventDate[] =>
     return a.startTime.localeCompare(b.startTime)
   })
 
-export const getNextFutureDate = (
-  dates: EventDate[],
-  now: Date = new Date(),
-): EventDate | null => {
-  const futureDates = dates
-    .map((date) => ({
-      ...date,
-      combined: new Date(`${date.date}T${date.startTime}:00`),
-    }))
-    .filter((entry) => entry.combined.getTime() >= now.getTime())
-    .sort((a, b) => a.combined.getTime() - b.combined.getTime())
+export const getUpcomingDates = (dates: EventDate[], now: Date = new Date()): EventDate[] =>
+  dates
+    .filter((date) => new Date(`${date.date}T${date.startTime}:00`).getTime() >= now.getTime())
+    .sort((a, b) => {
+      const aValue = new Date(`${a.date}T${a.startTime}:00`).getTime()
+      const bValue = new Date(`${b.date}T${b.startTime}:00`).getTime()
+      return aValue - bValue
+    })
 
-  return futureDates[0] ? { date: futureDates[0].date, startTime: futureDates[0].startTime } : null
+export const getUpcomingCount = (dates: EventDate[], now: Date = new Date()): number =>
+  getUpcomingDates(dates, now).length
+
+export const getNextFutureDate = (dates: EventDate[], now: Date = new Date()): EventDate | null => {
+  const futureDates = getUpcomingDates(dates, now)
+  return futureDates[0] ?? null
 }
 
 export const parseCsvEvents = (csvText: string): Event[] => {
@@ -88,13 +113,6 @@ export const parseCsvEvents = (csvText: string): Event[] => {
     skipEmptyLines: true,
     transformHeader: (header: string) => header.trim(),
   })
-
-  if (parsed.errors.length > 0) {
-    const relevantFirstError = parsed.errors[0]
-    if (relevantFirstError.type !== 'FieldMismatch') {
-      // Ignore parse warnings where the data is still usable.
-    }
-  }
 
   const records = parsed.data
     .map((row: Record<string, string>, index: number) => {
@@ -106,7 +124,8 @@ export const parseCsvEvents = (csvText: string): Event[] => {
         organizer,
         title,
         town: (row.town ?? '').trim() || null,
-        link: sanitizeLink((row.link ?? '').trim() || null),
+        websiteUrl: sanitizeUrl((row.websiteUrl ?? row.website_url ?? row.link ?? row.website ?? '').trim() || null),
+        imageUrl: sanitizeImageUrl((row.imageUrl ?? row.image_url ?? row.image ?? '').trim() || null),
       }
 
       const dates = [
@@ -133,15 +152,9 @@ export const parseCsvEvents = (csvText: string): Event[] => {
 }
 
 export const getVisibleEvents = (events: Event[], now: Date = new Date()): Event[] =>
-  events.filter((event) => {
-    const next = getNextFutureDate(event.dates, now)
-    return next !== null
-  })
+  events.filter((event) => getNextFutureDate(event.dates, now) !== null)
 
-export const filterEventsByDateRange = (
-  events: Event[],
-  range: DateRange,
-): Event[] => {
+export const filterEventsByDateRange = (events: Event[], range: DateRange): Event[] => {
   const from = range.from ? new Date(`${range.from}T00:00:00`) : null
   const to = range.to ? new Date(`${range.to}T23:59:59`) : null
 
